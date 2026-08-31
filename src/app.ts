@@ -52,7 +52,8 @@ export function createApp(config: Config): Express {
   app.use(healthRouter(client));
   app.use('/api', vehicleInfoRouter(client));
 
-  // Unmatched routes become an AppError, then everything is serialised once.
+  // Unmatched routes answer with the standard envelope; everything thrown by a
+  // route is serialised once, in errorHandler.
   app.use(notFound);
   app.use(errorHandler);
 

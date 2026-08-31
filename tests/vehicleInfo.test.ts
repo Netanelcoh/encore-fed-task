@@ -62,17 +62,17 @@ describe('POST /api/vehicle-info — client errors', () => {
   it('rejects a missing license_plate without calling upstream', async () => {
     const res = await request(app()).post('/api/vehicle-info').send({});
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     expect(res.body.success).toBe(false);
-    expect(res.body.error.code).toBe('INVALID_LICENSE_PLATE');
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('rejects a non-string license_plate', async () => {
     const res = await request(app()).post('/api/vehicle-info').send({ license_plate: 12345678 });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('INVALID_LICENSE_PLATE');
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -80,7 +80,7 @@ describe('POST /api/vehicle-info — client errors', () => {
     const res = await request(app()).post('/api/vehicle-info').send({ license_plate: 'abc' });
 
     expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('INVALID_LICENSE_PLATE');
+    expect(res.body.error.code).toBe('INVALID_LICENSE_PLATE_FORMAT');
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -90,9 +90,9 @@ describe('POST /api/vehicle-info — client errors', () => {
       .set('Content-Type', 'application/json')
       .send('{"license_plate":');
 
-    expect(res.status).toBe(400);
+    expect(res.status).toBe(422);
     expect(res.body.success).toBe(false);
-    expect(res.body.error.code).toBe('INVALID_LICENSE_PLATE');
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
   });
 });
 
@@ -111,8 +111,8 @@ describe('POST /api/vehicle-info — upstream mapping', () => {
     expect(res.body.error.message).toBe('רכב עם מספר 99999999 לא נמצא במאגר');
   });
 
-  it('flattens a pydantic 422 array into INVALID_LICENSE_PLATE', async () => {
-    fetchMock.mockImplementation(async () => 
+  it('flattens a pydantic 422 array into VALIDATION_ERROR', async () => {
+    fetchMock.mockImplementation(async () =>
       jsonResponse(422, {
         detail: [
           {
@@ -126,9 +126,24 @@ describe('POST /api/vehicle-info — upstream mapping', () => {
 
     const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '123456789' });
 
-    expect(res.status).toBe(400);
-    expect(res.body.error.code).toBe('INVALID_LICENSE_PLATE');
+    expect(res.status).toBe(422);
+    expect(res.body.error.code).toBe('VALIDATION_ERROR');
+    expect(res.body.error.message).toBe('Value error, מספר רכב חייב להיות 7 או 8 ספרות');
     expect(res.body.error.details.source).toBe('upstream');
+  });
+
+  it('maps a 400 to INVALID_LICENSE_PLATE_FORMAT and keeps the upstream message', async () => {
+    fetchMock.mockImplementation(async () =>
+      jsonResponse(400, {
+        detail: { success: false, error: 'פורמט מספר רכב לא תקין' },
+      }),
+    );
+
+    const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '1234567' });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.code).toBe('INVALID_LICENSE_PLATE_FORMAT');
+    expect(res.body.error.message).toBe('פורמט מספר רכב לא תקין');
   });
 
   it('does not retry a 404', async () => {
@@ -139,52 +154,52 @@ describe('POST /api/vehicle-info — upstream mapping', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 
-  it('maps an unparseable 200 body to UPSTREAM_ERROR', async () => {
+  it('maps an unparseable 200 body to SERVER_ERROR', async () => {
     fetchMock.mockImplementation(async () => jsonResponse(200, { success: true, data: { nope: 1 } }));
 
     const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '12345678' });
 
-    expect(res.status).toBe(502);
-    expect(res.body.error.code).toBe('UPSTREAM_ERROR');
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe('SERVER_ERROR');
   });
 
-  it('maps a non-JSON body to UPSTREAM_ERROR', async () => {
+  it('maps a non-JSON body to SERVER_ERROR', async () => {
     fetchMock.mockImplementation(async () => textResponse(200, '<html>gateway</html>'));
 
     const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '12345678' });
 
-    expect(res.status).toBe(502);
-    expect(res.body.error.code).toBe('UPSTREAM_ERROR');
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe('SERVER_ERROR');
   });
 });
 
 describe('POST /api/vehicle-info — upstream unavailable', () => {
-  it('maps a timeout to UPSTREAM_TIMEOUT after retrying', async () => {
+  it('maps a timeout to SERVER_ERROR after retrying', async () => {
     fetchMock.mockRejectedValue(timeoutError());
 
     const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '12345678' });
 
-    expect(res.status).toBe(504);
-    expect(res.body.error.code).toBe('UPSTREAM_TIMEOUT');
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe('SERVER_ERROR');
     expect(fetchMock).toHaveBeenCalledTimes(2); // initial + 1 retry
   });
 
-  it('maps a transport failure to UPSTREAM_ERROR', async () => {
+  it('maps a transport failure to SERVER_ERROR', async () => {
     fetchMock.mockRejectedValue(new TypeError('fetch failed'));
 
     const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '12345678' });
 
-    expect(res.status).toBe(502);
-    expect(res.body.error.code).toBe('UPSTREAM_ERROR');
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe('SERVER_ERROR');
   });
 
-  it('maps a 500 to UPSTREAM_ERROR', async () => {
+  it('maps a 500 to SERVER_ERROR', async () => {
     fetchMock.mockImplementation(async () => jsonResponse(500, { detail: 'boom' }));
 
     const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '12345678' });
 
-    expect(res.status).toBe(502);
-    expect(res.body.error.code).toBe('UPSTREAM_ERROR');
+    expect(res.status).toBe(500);
+    expect(res.body.error.code).toBe('SERVER_ERROR');
   });
 
   it('recovers when the retry succeeds', async () => {

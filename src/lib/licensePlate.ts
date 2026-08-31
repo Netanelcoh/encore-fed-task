@@ -16,7 +16,8 @@ export function normalizePlate(raw: string): string {
  * was inferred by probing rather than read from a contract. Copying it exactly
  * means that if the upstream widens its format we silently reject valid plates.
  * Being too loose costs one wasted round trip instead, and both verdicts
- * converge on INVALID_LICENSE_PLATE, so callers branch identically either way.
+ * converge on INVALID_LICENSE_PLATE_FORMAT, so callers branch identically
+ * either way.
  */
 const MIN_DIGITS = 5;
 const MAX_DIGITS = 10;

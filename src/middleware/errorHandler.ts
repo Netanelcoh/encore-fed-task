@@ -34,9 +34,9 @@ export function errorHandler(
   // express.json() rejected the payload before any route ran.
   if (isBodyParseError(error)) {
     logger.warn('malformed request body', { requestId });
-    respond(res, 400, {
+    respond(res, 422, {
       success: false,
-      error: { code: 'INVALID_LICENSE_PLATE', message: 'Request body must be valid JSON.' },
+      error: { code: 'VALIDATION_ERROR', message: 'Request body must be valid JSON.' },
     });
     return;
   }

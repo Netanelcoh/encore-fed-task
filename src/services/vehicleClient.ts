@@ -1,9 +1,9 @@
 import type { Config } from '../config.js';
-import { AppError } from '../lib/errors.js';
+import { AppError, type ErrorCode } from '../lib/errors.js';
 import { normalizePlate, validatePlate } from '../lib/licensePlate.js';
 import { logger } from '../lib/logger.js';
 import {
-  upstreamNotFoundSchema,
+  upstreamErrorSchema,
   upstreamSuccessSchema,
   upstreamValidationErrorSchema,
   vehicleInfoRequestSchema,
@@ -16,11 +16,13 @@ interface LookupOptions {
 
 const RETRY_BACKOFF_MS = 250;
 
-/** Retry only what might succeed on a second try. A 4xx is a verdict, not a blip. */
+/**
+ * Retry only what might succeed on a second try. A 4xx is a verdict, not a
+ * blip. SERVER_ERROR is the one code that covers blips — timeout, transport
+ * failure, upstream 5xx, unreadable body — so it is exactly the retryable set.
+ */
 function isRetryable(error: unknown): boolean {
-  return error instanceof AppError
-    ? error.code === 'UPSTREAM_TIMEOUT' || error.code === 'UPSTREAM_ERROR'
-    : false;
+  return error instanceof AppError && error.code === 'SERVER_ERROR';
 }
 
 function sleep(ms: number): Promise<void> {
@@ -45,26 +47,28 @@ export class VehicleClient {
 
   /**
    * Rejecting here means obviously-bad input never costs an upstream call, and
-   * it produces the same error code the upstream's own 422 maps to — so callers
-   * branch identically whichever side made the call.
+   * each rejection carries the code the upstream itself would have used — so
+   * callers branch identically whichever side made the call.
    */
   private parsePlate(requestBody: unknown): string {
-    const invalid = (message: string): never => {
-      throw new AppError('INVALID_LICENSE_PLATE', message, {
-        source: 'request',
-        field: 'license_plate',
-      });
+    const invalid = (code: ErrorCode, message: string): never => {
+      throw new AppError(code, message, { source: 'request', field: 'license_plate' });
     };
 
+    // A missing or non-string field is a body problem; pydantic answers 422 too.
     const parsed = vehicleInfoRequestSchema.safeParse(requestBody);
     if (!parsed.success) {
-      return invalid(parsed.error.issues[0]?.message ?? 'license_plate is required.');
+      return invalid(
+        'VALIDATION_ERROR',
+        parsed.error.issues[0]?.message ?? 'license_plate is required.',
+      );
     }
 
+    // A well-formed field holding a malformed plate is the format verdict.
     const licensePlate = normalizePlate(parsed.data.license_plate);
     const validation = validatePlate(licensePlate);
     if (!validation.ok) {
-      return invalid(validation.reason ?? 'Invalid license plate.');
+      return invalid('INVALID_LICENSE_PLATE_FORMAT', validation.reason ?? 'Invalid license plate.');
     }
 
     return licensePlate;
@@ -128,12 +132,13 @@ export class VehicleClient {
         reason: name || String(error),
       });
 
-      throw isTimeout
-        ? new AppError(
-            'UPSTREAM_TIMEOUT',
-            `Vehicle service did not respond within ${this.config.upstreamTimeoutMs}ms.`,
-          )
-        : new AppError('UPSTREAM_ERROR', 'Vehicle service is unreachable.');
+      // Both are SERVER_ERROR; only the message distinguishes them.
+      throw new AppError(
+        'SERVER_ERROR',
+        isTimeout
+          ? `Vehicle service did not respond within ${this.config.upstreamTimeoutMs}ms.`
+          : 'Vehicle service is unreachable.',
+      );
     }
 
     const body = await this.readJson(response);
@@ -151,7 +156,7 @@ export class VehicleClient {
   /**
    * Upstream should always send JSON; a non-JSON body means it is misbehaving.
    * Returning undefined rather than throwing lets mapResponse decide, so an
-   * unreadable body still becomes UPSTREAM_ERROR instead of a bare 500.
+   * unreadable body still becomes SERVER_ERROR instead of an unhandled throw.
    */
   private async readJson(response: Response): Promise<unknown> {
     let text: string;
@@ -170,45 +175,54 @@ export class VehicleClient {
     }
   }
 
+  /**
+   * One branch per status the upstream can answer with, each mapping to the
+   * code that carries the same status back out. Nothing is translated up or
+   * down: a 404 stays a 404, a pydantic 422 stays a 422.
+   */
   private mapResponse(response: Response, body: unknown, licensePlate: string): VehicleData {
     if (response.ok) {
       const parsed = upstreamSuccessSchema.safeParse(body);
       if (!parsed.success) {
         // A 200 we cannot trust is an upstream fault, not a client one.
-        throw new AppError(
-          'UPSTREAM_ERROR',
-          'Vehicle service returned an unexpected response format.',
-        );
+        throw new AppError('SERVER_ERROR', 'Vehicle service returned an unexpected response format.');
       }
       return parsed.data.data;
     }
 
-    if (response.status === 404) {
-      const parsed = upstreamNotFoundSchema.safeParse(body);
-      return this.throwNotFound(parsed.success ? parsed.data.detail.error : undefined, licensePlate);
-    }
+    // 400 and 404 share one body shape; only the verdict differs.
+    const detail = upstreamErrorSchema.safeParse(body);
+    const upstreamMessage = detail.success ? detail.data.detail.error : undefined;
 
-    if (response.status === 400 || response.status === 422) {
-      const parsed = upstreamValidationErrorSchema.safeParse(body);
-      const messages = parsed.success ? parsed.data.detail.map((entry) => entry.msg) : [];
+    if (response.status === 404) {
       throw new AppError(
-        'INVALID_LICENSE_PLATE',
-        messages[0] ?? 'Vehicle service rejected the license plate format.',
-        { upstreamStatus: response.status, upstreamMessages: messages, source: 'upstream' },
+        'VEHICLE_NOT_FOUND',
+        upstreamMessage ?? `No vehicle found for license plate ${licensePlate}.`,
+        { license_plate: licensePlate },
       );
     }
 
-    throw new AppError('UPSTREAM_ERROR', 'Vehicle service returned an error.', {
+    if (response.status === 400) {
+      throw new AppError(
+        'INVALID_LICENSE_PLATE_FORMAT',
+        upstreamMessage ?? 'Vehicle service rejected the license plate format.',
+        { license_plate: licensePlate, source: 'upstream' },
+      );
+    }
+
+    if (response.status === 422) {
+      const parsed = upstreamValidationErrorSchema.safeParse(body);
+      const messages = parsed.success ? parsed.data.detail.map((entry) => entry.msg) : [];
+      throw new AppError(
+        'VALIDATION_ERROR',
+        messages[0] ?? 'Vehicle service rejected the request body.',
+        { upstreamMessages: messages, source: 'upstream' },
+      );
+    }
+
+    throw new AppError('SERVER_ERROR', 'Vehicle service returned an error.', {
       upstreamStatus: response.status,
     });
-  }
-
-  private throwNotFound(upstreamMessage: string | undefined, licensePlate: string): never {
-    throw new AppError(
-      'VEHICLE_NOT_FOUND',
-      upstreamMessage ?? `No vehicle found for license plate ${licensePlate}.`,
-      { license_plate: licensePlate },
-    );
   }
 
   /** Used by /ready. Never throws — readiness reports, it does not fail. */

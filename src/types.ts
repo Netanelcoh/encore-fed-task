@@ -18,10 +18,11 @@ export const upstreamSuccessSchema = z.object({
 });
 
 /**
- * Upstream 404 body. FastAPI wraps the handler's payload in `detail`:
+ * Upstream 400 and 404 body — both are a raised HTTPException, so FastAPI wraps
+ * the handler's payload in `detail`:
  *   { "detail": { "success": false, "error": "רכב עם מספר ... לא נמצא במאגר" } }
  */
-export const upstreamNotFoundSchema = z.object({
+export const upstreamErrorSchema = z.object({
   detail: z.object({
     success: z.boolean().optional(),
     error: z.string(),
@@ -30,8 +31,8 @@ export const upstreamNotFoundSchema = z.object({
 
 /**
  * Upstream 422 body — a pydantic validation array, a different shape entirely
- * from the 404 above. Normalising these two into one envelope is most of the
- * reason this wrapper exists.
+ * from the 400/404 above. Normalising these two into one envelope is most of
+ * the reason this wrapper exists.
  */
 export const upstreamValidationErrorSchema = z.object({
   detail: z.array(
