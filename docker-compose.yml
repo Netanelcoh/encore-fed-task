@@ -1,0 +1,45 @@
+services:
+  # Local development. Requires nothing on the host but Docker itself —
+  # dependencies are installed inside the container, never on the machine.
+  api:
+    build:
+      context: .
+      target: dev
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      UPSTREAM_BASE_URL: https://insurance-webhook-945894769129.us-central1.run.app
+      UPSTREAM_TIMEOUT_MS: 5000
+      UPSTREAM_RETRIES: 1
+      RATE_LIMIT_MAX: 60
+      LOG_LEVEL: debug
+      CORS_ORIGIN: "*"
+    volumes:
+      # Source is bind-mounted so edits hot-reload through `tsx watch`, and the
+      # package-lock.json that npm generates inside the container lands on the host.
+      - .:/app
+      # Named volume, because the bind mount above would otherwise shadow the
+      # image's node_modules with an empty host directory. Keeping deps here is
+      # also what lets the host stay free of a node_modules/ tree.
+      - node_modules:/app/node_modules
+    # Re-sync deps on start so a package.json edit is picked up; a near no-op
+    # once the volume is warm.
+    command: sh -c "npm install --no-audit --no-fund && npm run dev"
+
+  # The actual deployable artifact. Not started by default:
+  #   docker compose --profile prod up prod --build
+  prod:
+    build:
+      context: .
+      target: runtime
+    profiles: ["prod"]
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      UPSTREAM_BASE_URL: https://insurance-webhook-945894769129.us-central1.run.app
+      LOG_LEVEL: info
+
+volumes:
+  node_modules:
