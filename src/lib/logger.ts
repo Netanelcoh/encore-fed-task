@@ -1,7 +1,3 @@
-/**
- * Minimal structured logger. One JSON object per line is what Cloud Run,
- * Render and Fly all parse into searchable fields, so no dependency is needed.
- */
 const LEVELS = { debug: 10, info: 20, warn: 30, error: 40 } as const;
 
 export type LogLevel = keyof typeof LEVELS;

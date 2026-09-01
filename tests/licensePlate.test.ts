@@ -8,8 +8,6 @@ describe('normalizePlate', () => {
     ['12 345 678', '12345678'],
     ['  12345678  ', '12345678'],
     ['', ''],
-    // Letters survive normalization on purpose, so validation can reject them
-    // instead of the plate being silently rewritten to a different vehicle.
     ['abc', 'abc'],
     ['abc12345', 'abc12345'],
   ];
@@ -45,8 +43,6 @@ describe('validatePlate', () => {
   });
 
   it('lets borderline lengths through so upstream is the authority', () => {
-    // 9 digits is invalid upstream, but we do not duplicate that rule locally;
-    // the upstream 422 maps to the same error code the caller sees anyway.
     expect(validatePlate('123456789').ok).toBe(true);
   });
 });

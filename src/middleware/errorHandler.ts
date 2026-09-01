@@ -13,11 +13,6 @@ function isBodyParseError(error: unknown): boolean {
   );
 }
 
-/**
- * The single place an error envelope is written. Every other module just throws
- * an AppError; nothing else serialises. That is what guarantees a caller never
- * meets a response shape it was not built to parse.
- */
 export function errorHandler(
   error: unknown,
   _req: Request,
@@ -31,7 +26,6 @@ export function errorHandler(
 
   const requestId = getRequestId(res);
 
-  // express.json() rejected the payload before any route ran.
   if (isBodyParseError(error)) {
     logger.warn('malformed request body', { requestId });
     respond(res, 422, {
@@ -56,8 +50,6 @@ export function errorHandler(
     return;
   }
 
-  // An unexpected throw is a bug in this service. Log the stack, return nothing
-  // internal — callers get a generic code they can still branch on.
   logger.error('unhandled error', {
     requestId,
     reason: error instanceof Error ? error.message : String(error),

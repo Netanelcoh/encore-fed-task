@@ -24,8 +24,6 @@ function intFromEnv(name: string, fallback: number, min: number, max: number): n
   return value;
 }
 
-/** Parsed once at boot. An invalid value crashes the process rather than
- *  producing a service that misbehaves quietly under load. */
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
   const upstreamBaseUrl = (env.UPSTREAM_BASE_URL || DEFAULT_UPSTREAM).replace(/\/+$/, '');
   try {

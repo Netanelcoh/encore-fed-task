@@ -181,7 +181,7 @@ describe('POST /api/vehicle-info — upstream unavailable', () => {
 
     expect(res.status).toBe(500);
     expect(res.body.error.code).toBe('SERVER_ERROR');
-    expect(fetchMock).toHaveBeenCalledTimes(2); // initial + 1 retry
+    expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
   it('maps a transport failure to SERVER_ERROR', async () => {

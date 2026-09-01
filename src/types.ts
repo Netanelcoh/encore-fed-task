@@ -1,6 +1,5 @@
 import { z } from 'zod';
 
-/** Vehicle payload as returned by the upstream service. Values arrive in Hebrew. */
 export const vehicleDataSchema = z.object({
   license_plate: z.string(),
   manufacturer: z.string(),
@@ -11,17 +10,11 @@ export const vehicleDataSchema = z.object({
 
 export type VehicleData = z.infer<typeof vehicleDataSchema>;
 
-/** Upstream 200 body. */
 export const upstreamSuccessSchema = z.object({
   success: z.literal(true),
   data: vehicleDataSchema,
 });
 
-/**
- * Upstream 400 and 404 body — both are a raised HTTPException, so FastAPI wraps
- * the handler's payload in `detail`:
- *   { "detail": { "success": false, "error": "רכב עם מספר ... לא נמצא במאגר" } }
- */
 export const upstreamErrorSchema = z.object({
   detail: z.object({
     success: z.boolean().optional(),
@@ -29,11 +22,6 @@ export const upstreamErrorSchema = z.object({
   }),
 });
 
-/**
- * Upstream 422 body — a pydantic validation array, a different shape entirely
- * from the 400/404 above. Normalising these two into one envelope is most of
- * the reason this wrapper exists.
- */
 export const upstreamValidationErrorSchema = z.object({
   detail: z.array(
     z.object({
@@ -44,7 +32,6 @@ export const upstreamValidationErrorSchema = z.object({
   ),
 });
 
-/** Request body accepted by POST /api/vehicle-info. */
 export const vehicleInfoRequestSchema = z.object({
   license_plate: z.string({
     required_error: 'license_plate is required.',

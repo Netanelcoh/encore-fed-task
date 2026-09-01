@@ -13,8 +13,6 @@ export function vehicleInfoRouter(client: VehicleClient): Router {
       const payload: ApiSuccess = { success: true, data };
       res.status(200).json(payload);
     } catch (error) {
-      // Every failure is already an AppError with a stable code; errorHandler
-      // is the one place it becomes a response body.
       next(error);
     }
   });
