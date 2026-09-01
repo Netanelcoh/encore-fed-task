@@ -2,8 +2,8 @@ export function normalizePlate(raw: string): string {
   return raw.trim().replace(/[\s\-.]/g, '');
 }
 
-const MIN_DIGITS = 5;
-const MAX_DIGITS = 10;
+const MIN_DIGITS = 7;
+const MAX_DIGITS = 8;
 const DIGITS_ONLY = /^\d+$/;
 
 export interface PlateValidation {

@@ -37,12 +37,11 @@ describe('validatePlate', () => {
     }
   });
 
-  it('rejects lengths far outside the plausible range', () => {
-    expect(validatePlate('1234').ok).toBe(false);
-    expect(validatePlate('12345678901').ok).toBe(false);
-  });
-
-  it('lets borderline lengths through so upstream is the authority', () => {
-    expect(validatePlate('123456789').ok).toBe(true);
+  it('rejects lengths outside the 7 to 8 digit range', () => {
+    for (const input of ['1234', '123456', '123456789', '12345678901']) {
+      const result = validatePlate(input);
+      expect(result.ok, `expected ${input} to be rejected`).toBe(false);
+      expect(result.reason).toMatch(/between 7 and 8 digits/i);
+    }
   });
 });

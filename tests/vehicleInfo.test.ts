@@ -124,7 +124,7 @@ describe('POST /api/vehicle-info — upstream mapping', () => {
       }),
     );
 
-    const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '123456789' });
+    const res = await request(app()).post('/api/vehicle-info').send({ license_plate: '12345678' });
 
     expect(res.status).toBe(422);
     expect(res.body.error.code).toBe('VALIDATION_ERROR');
